@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link, useLocation } from 'react-router-dom';
+import {  useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import { fetchProducts, selectAllProducts, selectCategories, selectSelectedCategory, setSelectedCategory } from '../features/products/productsSlice';
 import { addItem } from '../features/cart/cartSlice';
@@ -75,12 +75,35 @@ const ProductCard = styled.div`
   }
 `;
 
-const ProductImage = styled.div`
+const ProductImageWrapper = styled.div`
   height: 200px;
+  width: 100%;
   background: #f5f5f5;
-  background-image: ${props => props.image ? `url(${props.image})` : 'none'};
-  background-size: cover;
-  background-position: center;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const ProductImage = styled.img`
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s;
+  
+  &:hover {
+    transform: scale(1.05);
+  }
+`;
+
+const PlaceholderImage = styled.div`
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 3rem;
 `;
 
 const ProductInfo = styled.div`
@@ -182,6 +205,16 @@ const Menu = () => {
     }));
   };
 
+  // Helper function to encode image URL properly
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return '';
+    // Split path and filename to encode only the filename
+    const parts = imagePath.split('/');
+    const filename = parts.pop();
+    const encodedFilename = encodeURIComponent(filename);
+    return parts.join('/') + '/' + encodedFilename;
+  };
+
   if (status === 'loading') {
     return <div style={{ textAlign: 'center', padding: '2rem' }}>Loading menu...</div>;
   }
@@ -216,7 +249,26 @@ const Menu = () => {
         {products.length > 0 ? (
           products.map((product) => (
             <ProductCard key={product.id} id={product.id}>
-              <ProductImage image={product.image} />
+              <ProductImageWrapper>
+                {product.image ? (
+                  <ProductImage
+                    src={getImageUrl(product.image)}
+                    alt={product.name}
+                    onError={(e) => {
+                      console.error('Failed to load image:', product.image, e.target.src);
+                      e.target.style.display = 'none';
+                      const placeholder = e.target.nextSibling;
+                      if (placeholder) placeholder.style.display = 'flex';
+                    }}
+                    onLoad={() => {
+                      console.log('Image loaded successfully:', product.image);
+                    }}
+                  />
+                ) : null}
+                <PlaceholderImage style={{ display: product.image ? 'none' : 'flex' }}>
+                  🍪
+                </PlaceholderImage>
+              </ProductImageWrapper>
               <ProductInfo>
                 <ProductName>{product.name}</ProductName>
                 <ProductDescription>{product.description}</ProductDescription>

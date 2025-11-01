@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { FaTrash, FaPlus, FaMinus, FaArrowLeft, FaCreditCard } from 'react-icons/fa';
-import { addItem, removeItem, deleteItem, clearCart, applyPromoCode } from '../features/cart/cartSlice';
+import { addItem, removeItem, deleteItem,  applyPromoCode } from '../features/cart/cartSlice';
 
 const CartContainer = styled.div`
   max-width: 1200px;

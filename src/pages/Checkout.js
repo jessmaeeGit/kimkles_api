@@ -246,6 +246,34 @@ const Checkout = () => {
   const { suggestions, loading: addressLoading, error: addressError, searchAddresses, clearSuggestions } = useAddressAutocomplete();
   const [{ loadingStatus }] = usePayPalScriptReducer();
   
+  const NOTIFY_WEBHOOK_URL = process.env.REACT_APP_SMS_WEBHOOK_URL;
+  const NOTIFY_TO_NUMBER = '+639121541566';
+  
+  const sendOrderNotification = async ({ orderId: notifyOrderId, amount }) => {
+    try {
+      if (!NOTIFY_WEBHOOK_URL) {
+        console.warn('Notification webhook URL not configured (REACT_APP_SMS_WEBHOOK_URL)');
+        return;
+      }
+      const message = `New order ${notifyOrderId} placed. Total: ₱${Number(amount || 0).toFixed(2)}`;
+      const payload = {
+        to: NOTIFY_TO_NUMBER,
+        message,
+        meta: {
+          orderId: notifyOrderId,
+          total: Number(amount || 0)
+        }
+      };
+      await fetch(NOTIFY_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      console.error('Failed to send notification:', err);
+    }
+  };
+  
   // Effect hooks - all effects after state declarations
   useEffect(() => {
     // Set loading to false when component mounts
@@ -422,6 +450,8 @@ const Checkout = () => {
       setOrderId(mockOrderId);
       setOrderCompleted(true);
       dispatch(clearCart());
+      // Fire-and-forget notification (do not block UX)
+      sendOrderNotification({ orderId: mockOrderId, amount: derivedTotal });
       
       // In a real app, you would redirect to order confirmation page
       // navigate(`/order-confirmation/${mockOrderId}`);
@@ -505,6 +535,8 @@ const Checkout = () => {
       setOrderId(mockOrderId);
       setOrderCompleted(true);
       dispatch(clearCart());
+      // Fire-and-forget notification
+      sendOrderNotification({ orderId: mockOrderId, amount: derivedTotal });
       
       // Redirect to order confirmation
       navigate(`/track-order/${mockOrderId}`);
@@ -539,21 +571,7 @@ const Checkout = () => {
             >
               Back to Home
             </button>
-            <button 
-              onClick={() => navigate(`/track-order/${orderId}`)}
-              style={{
-                background: 'white',
-                color: '#8B4513',
-                border: '1px solid #8B4513',
-                padding: '0.75rem 1.5rem',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '1rem',
-                margin: '0.5rem',
-              }}
-            >
-              Track Order
-            </button>
+            
           </div>
         </div>
       </CheckoutContainer>
