@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import styled from 'styled-components';
 import { FaPlus, FaEdit, FaTrash, FaSearch, FaBoxOpen, FaFilter, FaChevronDown, FaChevronUp } from 'react-icons/fa';
+import { fetchProducts, selectAllProducts, deleteProduct } from '../../features/products/productsSlice';
 
 const ProductsContainer = styled.div`
   padding: 1rem;
@@ -264,76 +266,39 @@ const EmptyState = styled.div`
   }
 `;
 
-// Mock data - in a real app, this would come from an API
-const mockProducts = [
-  {
-    id: 1,
-    name: 'Chocolate Chip Cookie',
-    category: 'cookies',
-    price: 2.99,
-    stock: 42,
-    image: '/images/cookie-chocolate-chip.jpg',
-    status: 'active'
-  },
-  {
-    id: 2,
-    name: 'Double Chocolate Brownie',
-    category: 'brownies',
-    price: 3.99,
-    stock: 28,
-    image: '/images/brownie-double-chocolate.jpg',
-    status: 'active'
-  },
-  {
-    id: 3,
-    name: 'Red Velvet Cupcake',
-    category: 'cupcakes',
-    price: 3.49,
-    stock: 0,
-    image: '/images/cupcake-red-velvet.jpg',
-    status: 'active'
-  },
-  {
-    id: 4,
-    name: 'Oatmeal Raisin Cookie',
-    category: 'cookies',
-    price: 2.99,
-    stock: 35,
-    image: '/images/cookie-oatmeal-raisin.jpg',
-    status: 'active'
-  },
-  {
-    id: 5,
-    name: 'Blondie',
-    category: 'brownies',
-    price: 3.49,
-    stock: 15,
-    image: '/images/blondie.jpg',
-    status: 'active'
-  }
-];
-
 const Products = () => {
-  const [products, setProducts] = useState([]);
+  const dispatch = useDispatch();
+  const reduxProducts = useSelector(selectAllProducts);
+  const productsStatus = useSelector((state) => state.products.status);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockFilter, setStockFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   
-  // In a real app, you would fetch products from an API
+  // Helper function to encode image URL properly
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return '';
+    // Split path and filename to encode only the filename
+    const parts = imagePath.split('/');
+    const filename = parts.pop();
+    const encodedFilename = encodeURIComponent(filename);
+    return parts.join('/') + '/' + encodedFilename;
+  };
+  
+  // Fetch products from Redux store on component mount
   useEffect(() => {
-    // Simulate API call
-    const fetchProducts = async () => {
-      // In a real app, you would have an actual API call here
-      // const response = await fetch('/api/products');
-      // const data = await response.json();
-      
-      // For now, we'll use mock data
-      setProducts(mockProducts);
-    };
-    
-    fetchProducts();
-  }, []);
+    if (productsStatus === 'idle') {
+      dispatch(fetchProducts());
+    }
+  }, [productsStatus, dispatch]);
+  
+  // Transform Redux products to admin format (add stock field for display)
+  // In a real app, products would have stock from the database
+  const products = reduxProducts.map(product => ({
+    ...product,
+    stock: product.stock !== undefined ? product.stock : (product.inStock ? 50 : 0), // Default stock if not present
+    imageUrl: getImageUrl(product.image), // Encoded image URL for display
+  }));
   
   const filteredProducts = products.filter(product => {
     // Filter by search term
@@ -357,9 +322,8 @@ const Products = () => {
   
   const handleDelete = (productId) => {
     if (window.confirm('Are you sure you want to delete this product?')) {
-      // In a real app, you would make an API call to delete the product
-      // await deleteProduct(productId);
-      setProducts(products.filter(p => p.id !== productId));
+      // Delete product from Redux store
+      dispatch(deleteProduct(productId));
     }
   };
 
@@ -459,14 +423,14 @@ const Products = () => {
             
             {filteredProducts.map(product => (
               <ProductRow key={product.id}>
-                <ProductImage image={product.image} />
+                <ProductImage image={product.imageUrl || product.image} />
                 <ProductName>{product.name}</ProductName>
                 <div>
                   <ProductCategory>
                     {product.category}
                   </ProductCategory>
                 </div>
-                <ProductPrice>${product.price.toFixed(2)}</ProductPrice>
+                <ProductPrice>₱{product.price.toFixed(2)}</ProductPrice>
                 <div>{product.stock} in stock</div>
                 <div>
                   <StockStatus inStock={product.stock > 0}>

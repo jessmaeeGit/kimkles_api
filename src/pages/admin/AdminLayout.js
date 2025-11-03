@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import styled from 'styled-components';
 import { FaSignOutAlt, FaTachometerAlt, FaBox, FaShoppingBag, FaUsers, FaCreditCard, FaTags, FaBars, FaTimes } from 'react-icons/fa';
+import { logoutAdmin, setCurrentAdmin, selectCurrentAdmin } from '../../features/admin/adminSlice';
 
 const AdminContainer = styled.div`
   display: flex;
@@ -166,23 +168,118 @@ const UserMenu = styled.div`
 const AdminLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
-  
-  // In a real app, this would come from authentication context
-  const adminUser = {
-    name: 'Admin User',
-    email: 'admin@kimkles.com',
-    avatar: 'https://ui-avatars.com/api/?name=Admin+User&background=8B4513&color=fff'
-  };
+  const dispatch = useDispatch();
+  const currentAdmin = useSelector(selectCurrentAdmin);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [adminUser, setAdminUser] = useState(null);
+
+  useEffect(() => {
+    // Check if admin is logged in
+    const adminLoggedIn = localStorage.getItem('adminLoggedIn') === 'true';
+    const storedAdmin = localStorage.getItem('adminUser');
+    
+    // If no admin session, redirect immediately to homepage
+    if (!adminLoggedIn || !storedAdmin) {
+      console.log('No admin session found, redirecting to homepage...');
+      navigate('/');
+      return;
+    }
+    
+    // Verify admin data
+    try {
+      const admin = JSON.parse(storedAdmin);
+      
+      // Check if user has admin role
+      if (!admin.role || admin.role !== 'admin') {
+        console.log('User is not an admin, redirecting to homepage...');
+        // Clear invalid admin data
+        localStorage.removeItem('adminLoggedIn');
+        localStorage.removeItem('adminUser');
+        navigate('/');
+        return;
+      }
+      
+      // Set admin in Redux
+      dispatch(setCurrentAdmin(admin));
+      
+      // Set admin user for display
+      setAdminUser({
+        name: admin.name || 'Admin User',
+        email: admin.email,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(admin.name || 'Admin')}&background=8B4513&color=fff`
+      });
+    } catch (e) {
+      console.error('Error parsing admin data:', e);
+      // Clear corrupted data
+      localStorage.removeItem('adminLoggedIn');
+      localStorage.removeItem('adminUser');
+      navigate('/');
+      return;
+    }
+    
+    // Listen for auth changes
+    const handleAuthChange = () => {
+      const adminLoggedIn = localStorage.getItem('adminLoggedIn') === 'true';
+      if (!adminLoggedIn) {
+        navigate('/');
+      }
+    };
+    
+    // Listen for logout events
+    const handleLogout = () => {
+      navigate('/');
+    };
+    
+    window.addEventListener('authChange', handleAuthChange);
+    window.addEventListener('storage', handleAuthChange);
+    window.addEventListener('adminLogout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('authChange', handleAuthChange);
+      window.removeEventListener('storage', handleAuthChange);
+      window.removeEventListener('adminLogout', handleLogout);
+    };
+  }, []); // Only run once on mount
   
   const handleLogout = () => {
-    // In a real app, you would handle logout logic here
-    console.log('Admin logged out');
-    navigate('/admin/login');
+    if (window.confirm('Are you sure you want to logout?')) {
+      dispatch(logoutAdmin());
+      localStorage.removeItem('adminLoggedIn');
+      localStorage.removeItem('adminUser');
+      setAdminUser(null);
+      
+      // Trigger logout event
+      window.dispatchEvent(new Event('adminLogout'));
+      window.dispatchEvent(new Event('authChange'));
+      
+      navigate('/');
+    }
   };
   
+  // Show loading state while checking auth
+  // Only show loading if we're actually checking (has dispatch), otherwise redirect
+  if (!adminUser) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '1.2rem',
+        color: '#666'
+      }}>
+        Verifying admin access...
+      </div>
+    );
+  }
+  
   const isActive = (path) => {
-    return location.pathname === path ? 'active' : '';
+    // Check if current path matches or is the index route (/admin)
+    const currentPath = location.pathname;
+    if (path === '/admin/dashboard' && (currentPath === '/admin' || currentPath === '/admin/' || currentPath === '/admin/dashboard')) {
+      return 'active';
+    }
+    return currentPath === path || currentPath.startsWith(path + '/') ? 'active' : '';
   };
   
   const toggleSidebar = () => {

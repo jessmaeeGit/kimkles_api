@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import {  useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { fetchProducts, selectAllProducts, selectCategories, selectSelectedCategory, setSelectedCategory } from '../features/products/productsSlice';
 import { addItem } from '../features/cart/cartSlice';
@@ -167,12 +167,34 @@ const OutOfStockBadge = styled.span`
 const Menu = () => {
   const dispatch = useDispatch();
   const location = useLocation();
+  const navigate = useNavigate();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   
   const products = useSelector(selectAllProducts);
   const categories = useSelector(selectCategories);
   const selectedCategory = useSelector(selectSelectedCategory);
   const status = useSelector((state) => state.products.status);
   const error = useSelector((state) => state.products.error);
+
+  useEffect(() => {
+    // Check if user is logged in
+    const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    setIsLoggedIn(loggedIn);
+    
+    // Listen for auth changes
+    const handleAuthChange = () => {
+      const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+      setIsLoggedIn(loggedIn);
+    };
+    
+    window.addEventListener('authChange', handleAuthChange);
+    window.addEventListener('storage', handleAuthChange);
+    
+    return () => {
+      window.removeEventListener('authChange', handleAuthChange);
+      window.removeEventListener('storage', handleAuthChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (status === 'idle') {
@@ -196,6 +218,17 @@ const Menu = () => {
   }, [location.hash, products]);
 
   const handleAddToCart = (product) => {
+    // Check if user is logged in
+    if (!isLoggedIn) {
+      const shouldLogin = window.confirm(
+        'You need to be logged in to add items to your cart. Would you like to login now?'
+      );
+      if (shouldLogin) {
+        navigate('/login');
+      }
+      return;
+    }
+    
     dispatch(addItem({
       id: product.id,
       name: product.name,

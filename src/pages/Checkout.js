@@ -203,6 +203,7 @@ const Checkout = () => {
   // Hooks must be called at the top level and in the same order
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   
   // State hooks - all state declarations at the top
   const [isLoading, setIsLoading] = useState(true);
@@ -218,6 +219,8 @@ const Checkout = () => {
   const [promoCode, setPromoCode] = useState('');
   const [orderCompleted, setOrderCompleted] = useState(false);
   const [orderId, setOrderId] = useState('');
+  const [paymentApproved, setPaymentApproved] = useState(false);
+  const [pendingOrderData, setPendingOrderData] = useState(null);
 
   // Address autocomplete state
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -246,29 +249,38 @@ const Checkout = () => {
   const { suggestions, loading: addressLoading, error: addressError, searchAddresses, clearSuggestions } = useAddressAutocomplete();
   const [{ loadingStatus }] = usePayPalScriptReducer();
   
-  const NOTIFY_WEBHOOK_URL = process.env.REACT_APP_SMS_WEBHOOK_URL;
-  const NOTIFY_TO_NUMBER = '+639121541566';
-  
   const sendOrderNotification = async ({ orderId: notifyOrderId, amount }) => {
     try {
-      if (!NOTIFY_WEBHOOK_URL) {
-        console.warn('Notification webhook URL not configured (REACT_APP_SMS_WEBHOOK_URL)');
-        return;
-      }
-      const message = `New order ${notifyOrderId} placed. Total: ₱${Number(amount || 0).toFixed(2)}`;
+      const API_URL = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+      
+      console.log('📬 Sending order notifications...');
+      
       const payload = {
-        to: NOTIFY_TO_NUMBER,
-        message,
-        meta: {
-          orderId: notifyOrderId,
-          total: Number(amount || 0)
-        }
+        orderId: notifyOrderId,
+        amount: Number(amount || 0),
+        customerEmail: formData.email,
+        customerPhone: formData.phone,
+        customerName: formData.fullName,
+        items: items.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price
+        }))
       };
-      await fetch(NOTIFY_WEBHOOK_URL, {
+      
+      const response = await fetch(`${API_URL}/api/notify-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Notifications sent successfully:', data);
+      } else {
+        const error = await response.json();
+        console.error('❌ Notification failed:', error);
+      }
     } catch (err) {
       console.error('Failed to send notification:', err);
     }
@@ -276,6 +288,23 @@ const Checkout = () => {
   
   // Effect hooks - all effects after state declarations
   useEffect(() => {
+    // Check if user is logged in
+    const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    setIsLoggedIn(loggedIn);
+    
+    // Redirect to login if not logged in
+    if (!loggedIn) {
+      const shouldLogin = window.confirm(
+        'You need to be logged in to checkout. Would you like to login now?'
+      );
+      if (shouldLogin) {
+        navigate('/login');
+      } else {
+        navigate('/');
+      }
+      return;
+    }
+    
     // Set loading to false when component mounts
     setIsLoading(false);
     
@@ -287,7 +316,24 @@ const Checkout = () => {
       console.log('Subtotal:', cartState.subtotal);
       console.log('Total:', cartState.total);
     }
-  }, [cartState]);
+    
+    // Listen for auth changes
+    const handleAuthChange = () => {
+      const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+      setIsLoggedIn(loggedIn);
+      if (!loggedIn) {
+        navigate('/');
+      }
+    };
+    
+    window.addEventListener('authChange', handleAuthChange);
+    window.addEventListener('storage', handleAuthChange);
+    
+    return () => {
+      window.removeEventListener('authChange', handleAuthChange);
+      window.removeEventListener('storage', handleAuthChange);
+    };
+  }, [cartState, navigate]);
   
   // Debug: Log the values being used in the JSX
   useEffect(() => {
@@ -428,6 +474,13 @@ const Checkout = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // If PayPal is selected, don't process the form submission
+    // The PayPal button will handle payment and order creation
+    if (formData.paymentMethod === 'paypal') {
+      return;
+    }
+    
     // In a real app, you would validate the form and process the order
     const orderData = {
       ...formData,
@@ -440,11 +493,6 @@ const Checkout = () => {
     };
     
     try {
-      // In a real app, you would send this to your backend
-      // const result = await dispatch(createOrder(orderData)).unwrap();
-      // setOrderId(result.id);
-      // setOrderCompleted(true);
-      
       // For demo purposes, we'll simulate a successful order
       const mockOrderId = `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       setOrderId(mockOrderId);
@@ -453,8 +501,8 @@ const Checkout = () => {
       // Fire-and-forget notification (do not block UX)
       sendOrderNotification({ orderId: mockOrderId, amount: derivedTotal });
       
-      // In a real app, you would redirect to order confirmation page
-      // navigate(`/order-confirmation/${mockOrderId}`);
+      // Redirect to order confirmation page
+      navigate(`/track-order/${mockOrderId}`);
     } catch (error) {
       console.error('Error creating order:', error);
       alert('There was an error processing your order. Please try again.');
@@ -513,7 +561,7 @@ const Checkout = () => {
     try {
       const details = await actions.order.capture();
       
-      // Create the order after successful payment
+      // Store payment details for order creation
       const orderData = {
         ...formData,
         items,
@@ -524,26 +572,71 @@ const Checkout = () => {
         status: 'paid',
         paymentId: data.orderID,
         paymentDetails: details,
+        // Map formData to order fields
+        customerEmail: formData.email,
+        customerName: formData.fullName,
+        customerPhone: formData.phone,
       };
       
-      // In a real app, you would send this to your backend
-      // const result = await dispatch(createOrder(orderData)).unwrap();
-      // setOrderId(result.id);
-      
-      // For demo purposes, we'll simulate a successful order
-      const mockOrderId = `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-      setOrderId(mockOrderId);
-      setOrderCompleted(true);
-      dispatch(clearCart());
-      // Fire-and-forget notification
-      sendOrderNotification({ orderId: mockOrderId, amount: derivedTotal });
-      
-      // Redirect to order confirmation
-      navigate(`/track-order/${mockOrderId}`);
+      // Store pending order data
+      setPendingOrderData(orderData);
+      setPaymentApproved(true);
+      alert('Payment approved! Please click "Place Order" to complete your purchase.');
       
     } catch (error) {
       console.error('Payment processing failed:', error);
       alert('There was an error processing your payment. Please try again.');
+    }
+  };
+  
+  const handlePlaceOrder = async () => {
+    if (!pendingOrderData && !paymentApproved) {
+      alert('Please complete PayPal payment first.');
+      return;
+    }
+    
+    const orderData = pendingOrderData || {
+      ...formData,
+      items,
+      subtotal: derivedSubtotal,
+      discount: derivedDiscountAmount,
+      shipping: derivedShippingCost,
+      total: derivedTotal,
+      status: 'pending',
+      // Map formData to order fields
+      customerEmail: formData.email,
+      customerName: formData.fullName,
+      customerPhone: formData.phone,
+    };
+    
+    // Ensure customerEmail and customerName are included
+    if (!orderData.customerEmail && formData.email) {
+      orderData.customerEmail = formData.email;
+    }
+    if (!orderData.customerName && formData.fullName) {
+      orderData.customerName = formData.fullName;
+    }
+    if (!orderData.customerPhone && formData.phone) {
+      orderData.customerPhone = formData.phone;
+    }
+    
+    try {
+      // Create order in the system
+      const result = await dispatch(createOrder(orderData)).unwrap();
+      setOrderId(result.id);
+      setOrderCompleted(true);
+      
+      // Fire-and-forget notification
+      sendOrderNotification({ orderId: result.id, amount: derivedTotal });
+      
+      // Show success message and redirect to home after a short delay
+      alert(`Order placed successfully! Order #${result.id}. You will receive an SMS and email confirmation shortly.`);
+      setTimeout(() => {
+        navigate('/');
+      }, 500);
+    } catch (error) {
+      console.error('Failed to create order:', error);
+      alert('There was an error placing your order. Please try again.');
     }
   };
 
@@ -577,6 +670,7 @@ const Checkout = () => {
       </CheckoutContainer>
     );
   }
+
 
   return (
     <CheckoutContainer>
@@ -621,8 +715,12 @@ const Checkout = () => {
                   name="phone" 
                   value={formData.phone}
                   onChange={handleChange}
+                  placeholder="09XXXXXXXXX or +639XXXXXXXXX"
                   required 
                 />
+                <small style={{ color: '#666', fontSize: '0.85rem' }}>
+                  Format: 09XXXXXXXXX or +639XXXXXXXXX (Philippine numbers)
+                </small>
               </FormGroup>
               
               <FormGroup>
@@ -895,7 +993,8 @@ const Checkout = () => {
               </TotalRow>
               
               <PayButton 
-                type="submit"
+                type="button"
+                onClick={handlePlaceOrder}
                 disabled={items.length === 0}
               >
                 Place Order

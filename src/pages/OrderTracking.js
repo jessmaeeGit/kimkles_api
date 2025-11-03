@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import styled from 'styled-components';
 import { FaCheckCircle, FaTruck, FaBoxOpen, FaHome } from 'react-icons/fa';
+import { selectOrderHistory } from '../features/orders/orderSlice';
 
 const OrderTrackingContainer = styled.div`
   max-width: 800px;
@@ -228,26 +230,25 @@ const mockOrder = (orderId) => ({
 
 const OrderTracking = () => {
   const { orderId } = useParams();
+  const orderHistory = useSelector(selectOrderHistory);
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   
   useEffect(() => {
-    // In a real app, you would fetch the order details from an API
-    const fetchOrder = async () => {
-      try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 800));
-        const orderData = mockOrder(orderId);
-        setOrder(orderData);
-      } catch (error) {
-        console.error('Error fetching order:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+    // Try to find the order in the order history first
+    const foundOrder = orderHistory.find(o => o.id === orderId);
     
-    fetchOrder();
-  }, [orderId]);
+    if (foundOrder) {
+      setOrder(foundOrder);
+      setLoading(false);
+    } else {
+      // Fallback to mock data if order not found in history
+      // This handles page refreshes or direct navigation
+      const orderData = mockOrder(orderId);
+      setOrder(orderData);
+      setLoading(false);
+    }
+  }, [orderId, orderHistory]);
   
   if (loading) {
     return (
@@ -295,7 +296,9 @@ const OrderTracking = () => {
       }
     ];
     
-    const currentStatusIndex = statuses.findIndex(s => s.id === order.status);
+    // Map 'paid' status to 'processing' for timeline display
+    const displayStatus = order.status === 'paid' ? 'processing' : order.status;
+    const currentStatusIndex = statuses.findIndex(s => s.id === displayStatus);
     
     return statuses.map((status, index) => ({
       ...status,
@@ -310,6 +313,25 @@ const OrderTracking = () => {
     day: 'numeric',
     year: 'numeric'
   });
+  
+  // Handle different address formats (from checkout formData vs shippingAddress object)
+  const getShippingAddress = () => {
+    if (order.shippingAddress) {
+      return order.shippingAddress;
+    }
+    
+    // Format from checkout formData
+    return {
+      name: order.fullName || 'N/A',
+      street: order.address || 'N/A',
+      city: 'N/A',
+      state: 'N/A',
+      zipCode: 'N/A',
+      country: 'Philippines'
+    };
+  };
+  
+  const shippingAddress = getShippingAddress();
 
   return (
     <OrderTrackingContainer>
@@ -339,16 +361,18 @@ const OrderTracking = () => {
           
           <div>
             <h3>Shipping To</h3>
-            <p>{order.shippingAddress.name}</p>
-            <p>{order.shippingAddress.street}</p>
-            <p>{order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}</p>
-            <p>{order.shippingAddress.country}</p>
+            <p>{shippingAddress.name}</p>
+            <p>{shippingAddress.street}</p>
+            <p>{shippingAddress.city !== 'N/A' ? `${shippingAddress.city}, ${shippingAddress.state} ${shippingAddress.zipCode}` : ''}</p>
+            <p>{shippingAddress.country}</p>
           </div>
           
           <div>
-            <h3>Tracking Number</h3>
-            <p>{order.trackingNumber}</p>
-            <p><small>Carrier: {order.carrier}</small></p>
+            <h3>Payment Method</h3>
+            <p>{order.paymentMethod || 'PayPal'}</p>
+            {order.deliveryInstructions && (
+              <p><small>Instructions: {order.deliveryInstructions}</small></p>
+            )}
           </div>
         </OrderInfo>
       </OrderCard>
@@ -365,8 +389,8 @@ const OrderTracking = () => {
                 <p>Quantity: {item.quantity}</p>
               </ItemDetails>
               <ItemPrice>
-                ${(item.price * item.quantity).toFixed(2)}
-                <span className="quantity">${item.price.toFixed(2)} each</span>
+                ₱{(item.price * item.quantity).toFixed(2)}
+                <span className="quantity">₱{item.price.toFixed(2)} each</span>
               </ItemPrice>
             </OrderItem>
           ))}
@@ -374,29 +398,31 @@ const OrderTracking = () => {
           <div style={{ marginTop: '2rem', borderTop: '1px solid #EEE', paddingTop: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <span>Subtotal</span>
-              <span>${order.subtotal.toFixed(2)}</span>
+              <span>₱{order.subtotal.toFixed(2)}</span>
             </div>
             
             {order.discount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', color: 'green' }}>
                 <span>Discount</span>
-                <span>-${order.discount.toFixed(2)}</span>
+                <span>-₱{order.discount.toFixed(2)}</span>
               </div>
             )}
             
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <span>Shipping</span>
-              <span>{order.shipping === 0 ? 'Free' : `$${order.shipping.toFixed(2)}`}</span>
+              <span>{order.shipping === 0 ? 'Free' : `₱${order.shipping.toFixed(2)}`}</span>
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #EEE', fontWeight: 'bold', fontSize: '1.1rem' }}>
               <span>Total</span>
-              <span>${order.total.toFixed(2)}</span>
+              <span>₱{order.total.toFixed(2)}</span>
             </div>
             
-            <div style={{ marginTop: '1.5rem', fontSize: '0.9rem', color: '#666' }}>
-              <p><strong>Payment Method:</strong> {order.paymentMethod}</p>
-            </div>
+            {order.paymentMethod && (
+              <div style={{ marginTop: '1.5rem', fontSize: '0.9rem', color: '#666' }}>
+                <p><strong>Payment Method:</strong> {order.paymentMethod}</p>
+              </div>
+            )}
           </div>
         </OrderItems>
       </OrderCard>

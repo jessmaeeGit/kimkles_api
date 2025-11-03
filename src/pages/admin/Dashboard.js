@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { fetchProducts } from '../../features/products/productsSlice';
 import styled from 'styled-components';
+import { selectOrderHistory } from '../../features/orders/orderSlice';
+import { selectAllUsers } from '../../features/users/usersSlice';
+import { selectAllProducts } from '../../features/products/productsSlice';
 import { 
   FaDollarSign, 
   FaShoppingCart, 
@@ -253,77 +258,97 @@ const ActivityItem = styled.li`
   }
 `;
 
-// Mock data - in a real app, this would come from an API
-const stats = [
-  { 
-    title: 'Total Revenue', 
-    value: '$12,845', 
-    change: '+12.5%', 
-    icon: <FaDollarSign />, 
-    variant: 'primary' 
-  },
-  { 
-    title: 'Total Orders', 
-    value: '1,284', 
-    change: '+8.2%', 
-    icon: <FaShoppingCart />, 
-    variant: 'success' 
-  },
-  { 
-    title: 'Total Customers', 
-    value: '856', 
-    change: '+5.7%', 
-    icon: <FaUsers />, 
-    variant: 'info' 
-  },
-  { 
-    title: 'Products', 
-    value: '42', 
-    change: '+3.2%', 
-    icon: <FaBoxOpen />, 
-    variant: 'warning' 
-  }
-];
-
-const recentActivities = [
-  {
-    id: 1,
-    type: 'order',
-    message: 'New order #ORD-1001 from John Doe',
-    time: '2 minutes ago',
-    icon: <FaShoppingCart />
-  },
-  {
-    id: 2,
-    type: 'product',
-    message: 'Product "Chocolate Brownie" was updated',
-    time: '15 minutes ago',
-    icon: <FaBoxOpen />
-  },
-  {
-    id: 3,
-    type: 'user',
-    message: 'New customer registered: jane.doe@example.com',
-    time: '1 hour ago',
-    icon: <FaUsers />
-  },
-  {
-    id: 4,
-    type: 'payment',
-    message: 'Payment of $45.99 for order #ORD-1000 was processed',
-    time: '3 hours ago',
-    icon: <FaDollarSign />
-  },
-  {
-    id: 5,
-    type: 'promo',
-    message: 'New promo code "SUMMER20" created',
-    time: '5 hours ago',
-    icon: <FaTags />
-  }
-];
-
 const Dashboard = () => {
+  const orders = useSelector(selectOrderHistory);
+  const users = useSelector(selectAllUsers);
+  const products = useSelector(selectAllProducts);
+  const productsStatus = useSelector((state) => state.products.status);
+  const dispatch = useDispatch();
+  
+  // Fetch products if not loaded
+  useEffect(() => {
+    if (productsStatus === 'idle') {
+      dispatch(fetchProducts());
+    }
+  }, [productsStatus, dispatch]);
+  
+  // Dashboard updates automatically via Redux selectors
+  // This effect logs updates for debugging (can be removed in production)
+  useEffect(() => {
+    console.log('Dashboard data updated:', {
+      orders: orders.length,
+      users: users.length,
+      products: products.length,
+    });
+  }, [orders.length, users.length, products.length]);
+  
+  // Calculate total revenue from orders
+  const totalRevenue = orders.reduce((sum, order) => sum + (order.total || order.amount || 0), 0);
+  const totalOrders = orders.length;
+  const totalCustomers = users.length;
+  const totalProducts = products.length;
+  
+  // Calculate revenue change (mock for now - in real app would compare with previous period)
+  const revenueChange = '+0%';
+  const ordersChange = '+0%';
+  const customersChange = '+0%';
+  const productsChange = '+0%';
+  
+  const stats = [
+    { 
+      title: 'Total Revenue', 
+      value: `₱${totalRevenue.toFixed(2)}`, 
+      change: revenueChange, 
+      icon: <FaDollarSign />, 
+      variant: 'primary' 
+    },
+    { 
+      title: 'Total Orders', 
+      value: totalOrders.toString(), 
+      change: ordersChange, 
+      icon: <FaShoppingCart />, 
+      variant: 'success' 
+    },
+    { 
+      title: 'Total Customers', 
+      value: totalCustomers.toString(), 
+      change: customersChange, 
+      icon: <FaUsers />, 
+      variant: 'info' 
+    },
+    { 
+      title: 'Products', 
+      value: totalProducts.toString(), 
+      change: productsChange, 
+      icon: <FaBoxOpen />, 
+      variant: 'warning' 
+    }
+  ];
+  
+  // Generate recent activities from orders and users
+  const orderActivities = orders.map((order) => ({
+    id: `order-${order.id}`,
+    type: 'order',
+    message: `New order ${order.id} from ${order.customerName || order.customerEmail || 'Customer'}`,
+    time: order.orderDate ? format(new Date(order.orderDate), 'MMM d, yyyy HH:mm') : 'Recently',
+    icon: <FaShoppingCart />,
+    timestamp: order.orderDate ? new Date(order.orderDate).getTime() : Date.now(),
+  }));
+  
+  const userActivities = users.map((user) => ({
+    id: `user-${user.id}`,
+    type: 'user',
+    message: `New customer registered: ${user.name} (${user.email})`,
+    time: user.createdAt ? format(new Date(user.createdAt), 'MMM d, yyyy HH:mm') : 'Recently',
+    icon: <FaUsers />,
+    timestamp: user.createdAt ? new Date(user.createdAt).getTime() : Date.now(),
+  }));
+  
+  // Combine and sort all activities by timestamp
+  const recentActivities = [...orderActivities, ...userActivities]
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 5);
+  
   return (
     <DashboardContainer>
       <h1>Dashboard</h1>
@@ -337,9 +362,11 @@ const Dashboard = () => {
             <div className="info">
               <h3>{stat.value}</h3>
               <p>{stat.title}</p>
-              <small style={{ color: stat.change.startsWith('+') ? '#27ae60' : '#e74c3c' }}>
-                {stat.change} from last month
-              </small>
+              {stat.change !== '+0%' && (
+                <small style={{ color: stat.change.startsWith('+') ? '#27ae60' : '#e74c3c' }}>
+                  {stat.change} from last month
+                </small>
+              )}
             </div>
           </StatCard>
         ))}
@@ -364,19 +391,27 @@ const Dashboard = () => {
       <RecentActivity>
         <h3><FaClock /> Recent Activity</h3>
         <ActivityList>
-          {recentActivities.map(activity => (
-            <ActivityItem key={activity.id}>
-              <div className="activity-icon">
-                {activity.icon}
-              </div>
+          {recentActivities.length > 0 ? (
+            recentActivities.map(activity => (
+              <ActivityItem key={activity.id}>
+                <div className="activity-icon">
+                  {activity.icon}
+                </div>
+                <div className="activity-details">
+                  <p>{activity.message}</p>
+                  <span className="time">
+                    <FaClock /> {activity.time}
+                  </span>
+                </div>
+              </ActivityItem>
+            ))
+          ) : (
+            <ActivityItem>
               <div className="activity-details">
-                <p>{activity.message}</p>
-                <span className="time">
-                  <FaClock /> {activity.time}
-                </span>
+                <p>No recent activities</p>
               </div>
             </ActivityItem>
-          ))}
+          )}
         </ActivityList>
       </RecentActivity>
     </DashboardContainer>

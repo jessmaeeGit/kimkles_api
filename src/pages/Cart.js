@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
@@ -131,15 +131,30 @@ const CartItem = styled.div`
   }
 `;
 
-const ItemImage = styled.div`
+const ItemImageWrapper = styled.div`
   width: 100px;
   height: 100px;
   background: #F5F5F5;
   border-radius: 4px;
   margin-right: 1.5rem;
-  background-image: ${props => props.image ? `url(${props.image})` : 'none'};
-  background-size: cover;
-  background-position: center;
+  overflow: hidden;
+  flex-shrink: 0;
+`;
+
+const ItemImage = styled.img`
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+`;
+
+const PlaceholderImage = styled.div`
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 2rem;
 `;
 
 const ItemDetails = styled.div`
@@ -249,6 +264,40 @@ const Cart = () => {
   const navigate = useNavigate();
   const { items, totalQuantity, totalAmount, discount } = useSelector((state) => state.cart);
   const [promoCode, setPromoCode] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    // Check if user is logged in
+    const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    setIsLoggedIn(loggedIn);
+    
+    // Redirect to login if not logged in
+    if (!loggedIn && items.length > 0) {
+      const shouldLogin = window.confirm(
+        'You need to be logged in to view your cart. Would you like to login now?'
+      );
+      if (shouldLogin) {
+        navigate('/login');
+      } else {
+        // Clear cart if user doesn't want to login
+        navigate('/');
+      }
+    }
+    
+    // Listen for auth changes
+    const handleAuthChange = () => {
+      const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+      setIsLoggedIn(loggedIn);
+    };
+    
+    window.addEventListener('authChange', handleAuthChange);
+    window.addEventListener('storage', handleAuthChange);
+    
+    return () => {
+      window.removeEventListener('authChange', handleAuthChange);
+      window.removeEventListener('storage', handleAuthChange);
+    };
+  }, [navigate, items.length]);
   
   const handleRemoveItem = (id) => {
     dispatch(deleteItem(id));
@@ -282,6 +331,16 @@ const Cart = () => {
   
   const handleCheckout = () => {
     navigate('/checkout');
+  };
+  
+  // Helper function to encode image URL properly
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return '';
+    // Split path and filename to encode only the filename
+    const parts = imagePath.split('/');
+    const filename = parts.pop();
+    const encodedFilename = encodeURIComponent(filename);
+    return parts.join('/') + '/' + encodedFilename;
   };
   
   const subtotal = totalAmount;
@@ -322,7 +381,22 @@ const Cart = () => {
         <CartItems>
           {items.map((item) => (
             <CartItem key={item.id}>
-              <ItemImage image={item.image} />
+              <ItemImageWrapper>
+                {item.image ? (
+                  <ItemImage
+                    src={getImageUrl(item.image)}
+                    alt={item.name}
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      const placeholder = e.target.nextSibling;
+                      if (placeholder) placeholder.style.display = 'flex';
+                    }}
+                  />
+                ) : null}
+                <PlaceholderImage style={{ display: item.image ? 'none' : 'flex' }}>
+                  🍪
+                </PlaceholderImage>
+              </ItemImageWrapper>
               <ItemDetails>
                 <ItemName>{item.name}</ItemName>
                 <ItemPrice>₱{item.price.toFixed(2)}</ItemPrice>
@@ -370,7 +444,7 @@ const Cart = () => {
             <span>₱{total.toFixed(2)}</span>
           </SummaryRow>
           
-          <PromoCodeContainer>
+          {/* <PromoCodeContainer>
             <label htmlFor="promo-code">Promo Code</label>
             <PromoCodeInput>
               <input
@@ -385,7 +459,7 @@ const Cart = () => {
             <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem' }}>
               Try: SWEET10 for 10% off or WELCOME15 for 15% off
             </p>
-          </PromoCodeContainer>
+          </PromoCodeContainer> */}
           
           <CheckoutButton onClick={handleCheckout}>
             <FaCreditCard /> Proceed to Checkout

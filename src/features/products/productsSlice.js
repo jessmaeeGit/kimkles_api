@@ -60,18 +60,61 @@ export const fetchProducts = createAsyncThunk(
   }
 );
 
+// Load initial state from localStorage
+const loadProductsFromStorage = () => {
+  try {
+    const serializedState = localStorage.getItem('kimkles_products');
+    if (serializedState === null) {
+      return { items: [], status: 'idle', error: null, categories: ['all', 'cookies', 'brownies', 'cupcakes'], selectedCategory: 'all' };
+    }
+    return { items: JSON.parse(serializedState), status: 'idle', error: null, categories: ['all', 'cookies', 'brownies', 'cupcakes'], selectedCategory: 'all' };
+  } catch (err) {
+    return { items: [], status: 'idle', error: null, categories: ['all', 'cookies', 'brownies', 'cupcakes'], selectedCategory: 'all' };
+  }
+};
+
 const productsSlice = createSlice({
   name: 'products',
-  initialState: {
-    items: [],
-    status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
-    error: null,
-    categories: ['all', 'cookies', 'brownies', 'cupcakes'],
-    selectedCategory: 'all',
-  },
+  initialState: loadProductsFromStorage(),
   reducers: {
     setSelectedCategory: (state, action) => {
       state.selectedCategory = action.payload;
+    },
+    addProduct: (state, action) => {
+      const newProduct = {
+        ...action.payload,
+        id: action.payload.id || String(Date.now()),
+        inStock: action.payload.inStock !== undefined ? action.payload.inStock : true,
+      };
+      state.items.push(newProduct);
+      // Save to localStorage
+      try {
+        localStorage.setItem('kimkles_products', JSON.stringify(state.items));
+      } catch (err) {
+        console.error('Failed to save products to localStorage:', err);
+      }
+    },
+    updateProduct: (state, action) => {
+      const { id, ...updates } = action.payload;
+      const index = state.items.findIndex(product => product.id === id);
+      if (index !== -1) {
+        state.items[index] = { ...state.items[index], ...updates };
+        // Save to localStorage
+        try {
+          localStorage.setItem('kimkles_products', JSON.stringify(state.items));
+        } catch (err) {
+          console.error('Failed to save products to localStorage:', err);
+        }
+      }
+    },
+    deleteProduct: (state, action) => {
+      state.items = state.items.filter(product => product.id !== action.payload);
+      // Save to localStorage
+      try {
+        localStorage.setItem('kimkles_products', JSON.stringify(state.items));
+      } catch (err) {
+        console.error('Failed to save products to localStorage:', err);
+      }
     },
   },
   extraReducers: (builder) => {
@@ -82,6 +125,12 @@ const productsSlice = createSlice({
       .addCase(fetchProducts.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.items = action.payload;
+        // Save to localStorage
+        try {
+          localStorage.setItem('kimkles_products', JSON.stringify(state.items));
+        } catch (err) {
+          console.error('Failed to save products to localStorage:', err);
+        }
       })
       .addCase(fetchProducts.rejected, (state, action) => {
         state.status = 'failed';
@@ -90,7 +139,7 @@ const productsSlice = createSlice({
   },
 });
 
-export const { setSelectedCategory } = productsSlice.actions;
+export const { setSelectedCategory, addProduct, updateProduct, deleteProduct } = productsSlice.actions;
 
 export const selectAllProducts = (state) => {
   const { items, selectedCategory } = state.products;
